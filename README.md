@@ -12,7 +12,7 @@ class.
 
 ## Details
 
-Solutions are written in Jai. Jai is in closed beta right now;
+Solutions are written in Jai beta 0.2.029. Jai is in closed beta right now;
 get in contact with Jonathan Blow if you would like access. I am brand new to
 Jai, so expect poor quality code if you are referencing this repo for some
 reason.
