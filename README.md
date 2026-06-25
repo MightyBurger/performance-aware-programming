@@ -12,11 +12,19 @@ class.
 
 ## Details
 
-Solutions are written in Jai beta 0.2.029. Jai is in closed beta right now;
-get in contact with Jonathan Blow if you would like access. I am brand new to
-Jai, so expect poor quality code if you are referencing this repo for some
-reason.
+Solutions are written in Jai beta 0.2.029. Jai is in closed beta at the time of
+writing; get in contact with Jonathan Blow if you would like access.
+
+I am brand new to Jai. Expect to see early fragments of someone's Jai learning
+journey. Do not expect high quality reference code.
 
 I do not know yet what the rest of the course will look like, whether future
 assignments require C, etc.
+
+## Table of Contents
+
+You will find the following folders in this directory:
+
+- [001-mov-rr-decoder](001-mov-rr-decoder) - Decodes 8086 register-to-register
+MOV machine code
 
