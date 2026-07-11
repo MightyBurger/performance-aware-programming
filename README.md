@@ -21,6 +21,13 @@ journey. Do not expect high quality reference code.
 I do not know yet what the rest of the course will look like, whether future
 assignments require C, etc.
 
+### Submodule
+
+I dislike submodules but concede it's the right choice here, as I do not have
+a license that allows redistributing Casey's code listings. This repo has one
+submodule pointing to Casey's own Computer Enhance repo on Github. Make sure to
+set it up.
+
 ## Table of Contents
 
 You will find the following folders in this directory:

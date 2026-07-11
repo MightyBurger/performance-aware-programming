@@ -1,0 +1,3 @@
+[submodule "submodules/computer_enhance"]
+	path = submodules/computer_enhance
+	url = git@github.com:cmuratori/computer_enhance.git

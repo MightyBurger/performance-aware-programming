@@ -14,8 +14,8 @@ main :: () {
 
 
     // Read input file
-    // input := read_entire_file("inputs/listing_0037_single_register_mov");
-    input := read_entire_file("inputs/listing_0038_many_register_mov");
+    // input := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0037_single_register_mov");
+    input := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0038_many_register_mov");
 
     print("bits 16\n\n");
 
