@@ -142,52 +142,180 @@ main :: () {
     // Do not produce executable
     set_build_options_dc(.{do_output = false});
 
-
     // Read input file
-    input := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0039_many_register_mov");
-
+    input := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0039_more_movs");
     print("bits 16\n\n");
 
-    for instr: 0..input.count / 2 - 1 {
-        idx := instr * 2;
-        mov : [2] u8;
-        mov[0] = input[idx];
-        mov[1] = input[idx + 1];
-        print("%\n", decode_mov(mov));
-    };
+    machine: [] u8 = .{count = input.count, data = input.data};
+
+    while machine.count > 0 {
+        result: string;
+        if (machine[0] >> 2) & 0b1111_11 == 0b100010 {
+            result = decode_mov(*machine);
+        }
+        else if (machine[0] >> 4) & 0b1111 == 0b1011 {
+            result = immediate_to_register(*machine);
+        }
+        else {
+            result = unimplemented(*machine);
+        }
+        print("%\n", result);
+        reset_temporary_storage();
+    }
 }
 
 // =============================================================================
 
-decode_mov :: (machine: [2] u8) -> string {
+immediate_to_register :: (machine: *[] u8) -> string {
+    opcode  := (machine.*[0] >> 4) & 0b1111;
+    w       := (machine.*[0] >> 3) & 0b1;
+    reg     := (machine.*[0] >> 0) & 0b111;
 
-    opcode  := (machine[0] >> 2) & 0b111111;
-    d       := (machine[0] >> 1) & 0b1;
-    w       := (machine[0] >> 0) & 0b1;
+    machine.count -= 1;
+    machine.data += 1;
 
-    mod     := (machine[1] >> 6) & 0b11;
-    reg     := (machine[1] >> 3) & 0b111;
-    rm      := (machine[1] >> 0) & 0b111;
+    data: int = machine.*[0];
+
+    machine.count -= 1;
+    machine.data += 1;
+
+    if w {
+        data += cast(u32, machine.*[0]) << 8;
+        machine.count -= 1;
+        machine.data += 1;
+    }
+
+    the_reg := enum_to_string_lowercase(to_register(reg, w));
+    the_immediate := tprint("%", data);
+
+    return tprint("mov %, %", the_reg, the_immediate);
+}
+
+// =============================================================================
+
+unimplemented :: (machine: *[] u8) -> string {
+    machine.count -= 1;
+    machine.data += 1;
+    return "unimplemented";
+}
+
+// =============================================================================
+
+decode_mov :: (machine: *[] u8) -> string {
+
+    opcode  := (machine.*[0] >> 2) & 0b111111;
+    d       := (machine.*[0] >> 1) & 0b1;
+    w       := (machine.*[0] >> 0) & 0b1;
+
+    machine.count -= 1;
+    machine.data += 1;
+
+    mod     := (machine.*[0] >> 6) & 0b11;
+    reg     := (machine.*[0] >> 3) & 0b111;
+    rm      := (machine.*[0] >> 0) & 0b111;
+
+    machine.count -= 1;
+    machine.data += 1;
 
     assert(opcode == 0b100010);
-    assert(mod == 0b11);
 
-    src: Register;
-    dst: Register;
-    if d {
-        dst = to_register(reg, w);
-        src = to_register(rm, w);
+    if mod == 0b11 {
+        src: Register;
+        dst: Register;
+        if d {
+            dst = to_register(reg, w);
+            src = to_register(rm, w);
+        }
+        else {
+            dst = to_register(rm, w);
+            src = to_register(reg, w);
+        }
+
+        return tprint(
+            "mov %, %",
+            enum_to_string_lowercase(dst),
+            enum_to_string_lowercase(src)
+        );
     }
+    // weird special case: direct address
+    else if mod == 0b00 && rm == 0b110 {
+        address := 0;
+        address += machine.*[0] << 0;
+        address += cast(u32, machine.*[1]) << 8;
+        machine.count -= 2;
+        machine.data += 2;
+
+        the_reg := enum_to_string_lowercase(to_register(reg, w));
+        the_mem := tprint("[%]", address);
+
+        src: string;
+        dst: string;
+        if d {
+            dst = the_reg;
+            src = the_mem;
+        } else {
+            dst = the_mem;
+            src = the_reg;
+        };
+
+        return tprint("mov %, %", dst, src);
+    }
+    // memory-to-register or register-to-memory
     else {
-        dst = to_register(rm, w);
-        src = to_register(reg, w);
-    }
+        displacement := 0;
+        num_displ := mod;
+        if num_displ >= 1 {
+            displacement += machine.*[0];
+            machine.count -= 1;
+            machine.data += 1;
+        }
+        if num_displ >= 2 {
+            displacement += cast(u32, machine.*[0]) << 8;
+            machine.count -= 1;
+            machine.data += 1;
+        }
 
-    return sprint(
-        "mov %, %",
-        enum_to_string_lowercase(dst),
-        enum_to_string_lowercase(src)
-    );
+        the_reg := enum_to_string_lowercase(to_register(reg, w));
+        builder: String_Builder;
+        init_string_builder(*builder);
+        builder.allocator = temp;
+        append(*builder, "[");
+        if rm == {
+            case 0b000;
+                append(*builder, "bx + si");
+            case 0b001;
+                append(*builder, "bx + di");
+            case 0b010;
+                append(*builder, "bp + si");
+            case 0b011;
+                append(*builder, "bp + di");
+            case 0b100;
+                append(*builder, "si");
+            case 0b101;
+                append(*builder, "di");
+            case 0b110;
+                append(*builder, "bp");
+            case 0b111;
+                append(*builder, "bx");
+        };
+        if displacement > 0 {
+            print_to_builder(*builder, " + %", displacement);
+        };
+        append(*builder, "]");
+        the_mem := builder_to_string(*builder);
+
+        src: string;
+        dst: string;
+        if d {
+            dst = the_reg;
+            src = the_mem;
+        } else {
+            dst = the_mem;
+            src = the_reg;
+        };
+
+        return tprint("mov %, %", dst, src);
+    }
 }
 
 // =============================================================================
@@ -242,6 +370,7 @@ enum_to_string_lowercase :: (value: $T) -> string {
     #assert type_info(T).type == .ENUM;
     #insert -> string {
         builder : String_Builder;
+        init_string_builder(*builder);
         print_to_builder(*builder, "if value == {");
         info := cast(*Type_Info_Enum) type_info(T);
         for name, index: info.names {
