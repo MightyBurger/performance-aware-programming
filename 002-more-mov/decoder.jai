@@ -1,135 +1,7 @@
 // Copyright 2026 Jordan Johnson
 
+// Reference around page 4-22 of Intel 8086 Family User's Manual
  
-
-/*
-    Life got busy, but getting back to the course!
-
-    In 002 we only had to worry about register-register moves:
-
-        mov cx, bx
-        mov ch, ah
-        mov dx, bx
-        mov si, bx
-        mov bx, di
-        mov al, cl
-        mov ch, ch
-        mov bx, ax
-        mov bx, si
-        mov sp, di
-        mov bp, ax
-
-    These were all two-byte instructions, with this form:
-
-    byte 0:
-        [7..2]  0b100010    opcode bit pattern
-        [1]     d           0: REG is source. 1: REG is dest.
-        [0]     w           0: byte data. 1: word data.
-    byte 1:
-        [7..6]  mod         mode
-                            00: memory mode, no displacement except R/M=0b110
-                            01: memory-mode, 8-bit displacement
-                            10: memory-mode, 16-bit displacement
-                            11: register mode, no displacement <- always this
-        [5..3]  reg         register; see register table
-        [2..0]  r/m         register; see register table
-
-
-    Register table:
-        -----------
-        REG W=0 W=1
-        -----------
-        000 AL  AX
-        001 CL  CX
-        010 DL  DX
-        011 BL  BX
-        100 AH  SP
-        101 CH  BP
-        110 DH  SI
-        111 BH  DI
-        -----------
-
-    --------------------------------------------
-
-
-    Now, we have a few other cases to handle.
-
-    Here's the contents of listing 0039:
-
-        bits 16
-
-        ; Register-to-register
-        mov si, bx
-        mov dh, al
-
-        ; 8-bit immediate-to-register
-        mov cl, 12
-        mov ch, -12
-
-        ; 16-bit immediate-to-register
-        mov cx, 12
-        mov cx, -12
-        mov dx, 3948
-        mov dx, -3948
-
-        ; Source address calculation
-        mov al, [bx + si]
-        mov bx, [bp + di]
-        mov dx, [bp]
-
-        ; Source address calculation plus 8-bit displacement
-        mov ah, [bx + si + 4]
-
-        ; Source address calculation plus 16-bit displacement
-        mov al, [bx + si + 4999]
-
-        ; Dest address calculation
-        mov [bx + di], cx
-        mov [bp + si], cl
-        mov [bp], ch
-
-    Again, my job is to recreate these assembly instructions from raw machine
-    code.
-
-    Let's look at the mod field first. It'll tell us what to do.
-
-    In addition to register-to-register, I must also handle:
-        - immediate-to-register (8- and 16-bit variants)
-        - memory to register with various displacements
-        - register to memory with various displacements
-
-    byte 0:
-        [7..2]  0b100010    opcode bit pattern
-        [1]     d           0: REG is source. 1: REG is dest.
-        [0]     w           0: byte data. 1: word data.
-    byte 1:
-        [7..6]  mod         mode
-                            00: memory mode, no displacement except R/M=110
-                            01: memory-mode, 8-bit displacement
-                            10: memory-mode, 16-bit displacement
-                            11: register mode, no displacement <- assuming not
-        [5..3]  reg         register; see register table
-        [2..0]  r/m         for memory moves, tells you what "equation" to use;
-                            see effective address table
-
-    --------------------------------
-    R/M     Effective Address
-    --------------------------------
-    000     BX + SI + displacement
-    001     BX + DI + displacement
-    010     BP + SI + displacement
-    011     BP + DI + displacement
-    100     SI + displacement
-    101     DI + displacement
-    110     BP + displacement * unless mod=00, then direct address!
-    111     BX + displacement
-    --------------------------------
-    The displacement is 0, 1, or 2 bytes, depending on the mod field.
-
-
-
-*/
-
 #import "Compiler";
 #import "Basic";
 #import "File";
@@ -142,47 +14,265 @@ main :: () {
     // Do not produce executable
     set_build_options_dc(.{do_output = false});
 
-    // Read input file
-    input := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0039_more_movs");
+    bin0 := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0039_more_movs");
+    bin1 := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0040_challenge_movs");
+
+    print("--- More Movs ---\n");
+    print("%\n\n\n", run(bin0));
+
+
+    print("--- Challenge Movs ---\n");
+    print("%\n\n\n", run(bin1));
+}
+
+run :: (input: string) -> string {
+
     print("bits 16\n\n");
+
+    builder: String_Builder;
+    init_string_builder(*builder);
 
     machine: [] u8 = .{count = input.count, data = input.data};
 
     while machine.count > 0 {
         result: string;
-        if (machine[0] >> 2) & 0b1111_11 == 0b100010 {
+        if (machine.data.* >> 2) & 0b1111_11 == 0b100010 {
             result = decode_mov(*machine);
         }
-        else if (machine[0] >> 4) & 0b1111 == 0b1011 {
-            result = immediate_to_register(*machine);
+        else if (machine.data.* >> 1) & 0b1111111 == 0b1100011 {
+            result = decode_immediate_to_register_memory(*machine);
+        }
+        else if (machine.data.* >> 4) & 0b1111 == 0b1011 {
+            result = decode_immediate_to_register(*machine);
+        }
+        else if (machine.data.* >> 1) & 0b1111111 == 0b1010000 {
+            result = decode_memory_to_accumulator(*machine);
+        }
+        else if (machine.data.* >> 1) & 0b1111111 == 0b1010001 {
+            result = decode_accumulator_to_memory(*machine);
         }
         else {
             result = unimplemented(*machine);
         }
-        print("%\n", result);
+        print_to_builder(*builder, "%\n", result);
         reset_temporary_storage();
+    }
+
+    return builder_to_string(*builder);
+}
+
+// =============================================================================
+
+decode_memory_to_accumulator :: (machine: *[] u8) -> string {
+
+    opcode  := (machine.data.* >> 1) & 0b0111_1111;
+    w       := (machine.data.* >> 0) & 0b1;
+    machine.data += 1;
+    machine.count -= 1;
+
+    addr    := cast(*u16, machine.data).*;
+    machine.data += 2;
+    machine.count -= 2;
+    the_mem := tprint("[%]", addr);
+
+    the_reg: string;
+    if w {
+        the_reg = "ax";
+    } else {
+        the_reg = "al";
+    }
+
+    return tprint(
+        "mov %, %",
+        the_reg,
+        the_mem,
+    );
+}
+
+decode_accumulator_to_memory :: (machine: *[] u8) -> string {
+
+    opcode  := (machine.data.* >> 1) & 0b0111_1111;
+    w       := (machine.data.* >> 0) & 0b1;
+    machine.data += 1;
+    machine.count -= 1;
+
+    addr    := cast(*u16, machine.data).*;
+    machine.data += 2;
+    machine.count -= 2;
+    the_mem := tprint("[%]", addr);
+
+    the_reg: string;
+    if w {
+        the_reg = "ax";
+    } else {
+        the_reg = "al";
+    }
+
+    return tprint(
+        "mov %, %",
+        the_mem,
+        the_reg,
+    );
+}
+
+// =============================================================================
+
+decode_immediate_to_register_memory :: (machine: *[] u8) -> string {
+
+    opcode  := (machine.data.* >> 1) & 0b0111_1111;
+    w       := (machine.data.* >> 0) & 0b1;
+
+    machine.count -= 1;
+    machine.data += 1;
+
+    mod     := (machine.data.* >> 6) & 0b11;
+    zero    := (machine.data.* >> 3) & 0b111;
+    rm      := (machine.data.* >> 0) & 0b111;
+
+    machine.count -= 1;
+    machine.data += 1;
+
+    assert(opcode == 0b1100011);
+    assert(zero == 0);
+
+    // register mode
+    if mod == 0b11 {
+        data : int;
+        if !w {
+            data = cast(*s8, machine.data).*;
+            machine.count -= 1;
+            machine.data += 1;
+        }
+        else {
+            data = cast(*s16, machine.data).*;
+            machine.count -= 2;
+            machine.data += 2;
+        }
+
+        the_reg := to_register(rm, w);
+        the_immediate := tprint("%", data);
+
+        return tprint(
+            "mov %, %",
+            the_reg,
+            the_immediate
+        );
+    }
+
+    // weird special case: direct address
+    else if mod == 0b00 && rm == 0b110 {
+        address := cast(*u16, machine.data).*;
+        machine.count -= 2;
+        machine.data += 2;
+
+        data : int;
+        if !w {
+            data = cast(*s8, machine.data).*;
+            machine.count -= 1;
+            machine.data += 1;
+        }
+        else {
+            data = cast(*s16, machine.data).*;
+            machine.count -= 2;
+            machine.data += 2;
+        }
+
+        the_mem := tprint("[%]", address);
+        the_immediate := tprint("%", data);
+
+        return tprint("mov %, %", the_mem, the_immediate);
+    }
+    // memory mode
+    else {
+        displacement : int = 0;
+        num_displ := mod;
+        if num_displ == 1 {
+            displacement = cast(*s8, machine.data).*;
+            machine.count -= 1;
+            machine.data += 1;
+        }
+        else if num_displ == 2 {
+            ptr := cast(*s16, machine.data);
+            displacement = cast(*s16, machine.data).*;
+            machine.count -= 2;
+            machine.data += 2;
+        }
+
+        data : int;
+        if !w {
+            data = cast(*s8, machine.data).*;
+            machine.count -= 1;
+            machine.data += 1;
+        }
+        else {
+            data = cast(*s16, machine.data).*;
+            machine.count -= 2;
+            machine.data += 2;
+        }
+
+        the_immediate : string;
+        if !w {
+            the_immediate = tprint("byte %", data);
+        } else {
+            the_immediate = tprint("word %", data);
+        }
+
+
+        builder: String_Builder;
+        init_string_builder(*builder);
+        builder.allocator = temp;
+        append(*builder, "[");
+        if rm == {
+            case 0b000;
+                append(*builder, "bx + si");
+            case 0b001;
+                append(*builder, "bx + di");
+            case 0b010;
+                append(*builder, "bp + si");
+            case 0b011;
+                append(*builder, "bp + di");
+            case 0b100;
+                append(*builder, "si");
+            case 0b101;
+                append(*builder, "di");
+            case 0b110;
+                append(*builder, "bp");
+            case 0b111;
+                append(*builder, "bx");
+        }
+        if displacement > 0 {
+            print_to_builder(*builder, " + %", displacement);
+        }
+        else if displacement < 0 {
+            print_to_builder(*builder, " - %", -displacement);
+        }
+        append(*builder, "]");
+        the_mem := builder_to_string(*builder);
+
+        return tprint("mov %, %", the_mem, the_immediate);
     }
 }
 
 // =============================================================================
 
-immediate_to_register :: (machine: *[] u8) -> string {
-    opcode  := (machine.*[0] >> 4) & 0b1111;
-    w       := (machine.*[0] >> 3) & 0b1;
-    reg     := (machine.*[0] >> 0) & 0b111;
+decode_immediate_to_register :: (machine: *[] u8) -> string {
+    opcode  := (machine.data.* >> 4) & 0b1111;
+    w       := (machine.data.* >> 3) & 0b1;
+    reg     := (machine.data.* >> 0) & 0b111;
 
     machine.count -= 1;
     machine.data += 1;
 
-    data: int = machine.*[0];
-
-    machine.count -= 1;
-    machine.data += 1;
-
-    if w {
-        data += cast(u32, machine.*[0]) << 8;
+    data : int;
+    if !w {
+        data = cast(*s8, machine.data).*;
         machine.count -= 1;
         machine.data += 1;
+    }
+    else {
+        data = cast(*s16, machine.data).*;
+        machine.count -= 2;
+        machine.data += 2;
     }
 
     the_reg := enum_to_string_lowercase(to_register(reg, w));
@@ -203,16 +293,16 @@ unimplemented :: (machine: *[] u8) -> string {
 
 decode_mov :: (machine: *[] u8) -> string {
 
-    opcode  := (machine.*[0] >> 2) & 0b111111;
-    d       := (machine.*[0] >> 1) & 0b1;
-    w       := (machine.*[0] >> 0) & 0b1;
+    opcode  := (machine.data.* >> 2) & 0b111111;
+    d       := (machine.data.* >> 1) & 0b1;
+    w       := (machine.data.* >> 0) & 0b1;
 
     machine.count -= 1;
     machine.data += 1;
 
-    mod     := (machine.*[0] >> 6) & 0b11;
-    reg     := (machine.*[0] >> 3) & 0b111;
-    rm      := (machine.*[0] >> 0) & 0b111;
+    mod     := (machine.data.* >> 6) & 0b11;
+    reg     := (machine.data.* >> 3) & 0b111;
+    rm      := (machine.data.* >> 0) & 0b111;
 
     machine.count -= 1;
     machine.data += 1;
@@ -239,9 +329,7 @@ decode_mov :: (machine: *[] u8) -> string {
     }
     // weird special case: direct address
     else if mod == 0b00 && rm == 0b110 {
-        address := 0;
-        address += machine.*[0] << 0;
-        address += cast(u32, machine.*[1]) << 8;
+        address := cast(*u16, machine.data).*;
         machine.count -= 2;
         machine.data += 2;
 
@@ -262,17 +350,18 @@ decode_mov :: (machine: *[] u8) -> string {
     }
     // memory-to-register or register-to-memory
     else {
-        displacement := 0;
+        displacement : int = 0;
         num_displ := mod;
-        if num_displ >= 1 {
-            displacement += machine.*[0];
+        if num_displ == 1 {
+            displacement = cast(*s8, machine.data).*;
             machine.count -= 1;
             machine.data += 1;
         }
-        if num_displ >= 2 {
-            displacement += cast(u32, machine.*[0]) << 8;
-            machine.count -= 1;
-            machine.data += 1;
+        else if num_displ == 2 {
+            ptr := cast(*s16, machine.data);
+            displacement = cast(*s16, machine.data).*;
+            machine.count -= 2;
+            machine.data += 2;
         }
 
         the_reg := enum_to_string_lowercase(to_register(reg, w));
@@ -297,10 +386,13 @@ decode_mov :: (machine: *[] u8) -> string {
                 append(*builder, "bp");
             case 0b111;
                 append(*builder, "bx");
-        };
+        }
         if displacement > 0 {
             print_to_builder(*builder, " + %", displacement);
-        };
+        }
+        else if displacement < 0 {
+            print_to_builder(*builder, " - %", -displacement);
+        }
         append(*builder, "]");
         the_mem := builder_to_string(*builder);
 
@@ -319,21 +411,6 @@ decode_mov :: (machine: *[] u8) -> string {
 }
 
 // =============================================================================
-
-/*
-    -----------
-    REG W=0 W=1
-    -----------
-    000 AL  AX
-    001 CL  CX
-    010 DL  DX
-    011 BL  BX
-    100 AH  SP
-    101 CH  BP
-    110 DH  SI
-    111 BH  DI
-    -----------
-*/
 
 // Here, I concatenate REG and w.
 Register :: enum u8 #specified {
