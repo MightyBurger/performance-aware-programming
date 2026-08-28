@@ -46,6 +46,8 @@ run :: (input: string) -> string {
 
     while machine.count > 0 {
         result: string;
+
+        // MOV instructions
         if (machine.data.* >> 2) & 0b1111_11 == 0b100010 {
             result = decode_pattern_rm_to_rm(*machine, "mov");
         }
@@ -53,17 +55,51 @@ run :: (input: string) -> string {
             result = decode_pattern_imm_to_rm(*machine, "mov");
         }
         else if (machine.data.* >> 4) & 0b1111 == 0b1011 {
-            result = decode_immediate_to_register(*machine);
+            result = decode_mov_immediate_to_register(*machine);
         }
         else if (machine.data.* >> 1) & 0b1111111 == 0b1010000 {
-            result = decode_memory_to_accumulator(*machine);
+            result = decode_mov_memory_to_accumulator(*machine);
         }
         else if (machine.data.* >> 1) & 0b1111111 == 0b1010001 {
-            result = decode_accumulator_to_memory(*machine);
+            result = decode_mov_accumulator_to_memory(*machine);
         }
+
+        // Arithmetic instructions
+        else if (machine.data.* >> 2) & 0b111111 == 0b000000 {
+            result = decode_pattern_rm_to_rm(*machine, "add");
+        }
+        else if (machine.data.* >> 2) & 0b111111 == 0b001010 {
+            result = decode_pattern_rm_to_rm(*machine, "sub");
+        }
+        else if (machine.data.* >> 2) & 0b111111 == 0b001110 {
+            result = decode_pattern_rm_to_rm(*machine, "cmp");
+        }
+        else if (machine.data.* >> 2) & 0b111111 == 0b100000 {
+            // (NOTE: ignoring sign extension bit!!)
+            subop := (machine.data[1] >> 3) & 0b111;
+            if subop == {
+                case 0b000; result = decode_pattern_imm_to_rm(*machine, "add");
+                case 0b101; result = decode_pattern_imm_to_rm(*machine, "sub");
+                case 0b111; result = decode_pattern_imm_to_rm(*machine, "cmp");
+                case;       result = unimplemented(*machine);
+            }
+        }
+        else if (machine.data.* >> 1) & 0b1111111 == 0b0000010 {
+            result = decode_pattern_imm_to_acc(*machine, "add");
+        }
+        else if (machine.data.* >> 1) & 0b1111111 == 0b0010110 {
+            result = decode_pattern_imm_to_acc(*machine, "sub");
+        }
+        else if (machine.data.* >> 1) & 0b1111111 == 0b0011110 {
+            result = decode_pattern_imm_to_acc(*machine, "cmp");
+        }
+        
+
+        // Unrecognized
         else {
             result = unimplemented(*machine);
         }
+
         print_to_builder(*builder, "%\n", result);
         reset_temporary_storage();
     }
@@ -110,7 +146,7 @@ decode_pattern_rm_to_rm :: (machine: *[] u8, prefix: string) -> string {
         }
 
         return tprint(
-            "% %, %",
+            "% %, % ; style 1",
             prefix,
             enum_to_string_lowercase(dst),
             enum_to_string_lowercase(src)
@@ -195,17 +231,20 @@ decode_pattern_rm_to_rm :: (machine: *[] u8, prefix: string) -> string {
             src = the_reg;
         };
 
-        return tprint("% %, %", prefix, dst, src);
+        return tprint("% %, % ; style 1", prefix, dst, src);
     }
 }
 
 // =============================================================================
 
-// Style (2)    [OPCODE W] [MOD xyz R/m] [IMM]
+// Style (2)    [OPCODE SW] [MOD xyz R/m] [IMM]
 // Note, you will need to peek ahead of time to obtain the prefix.
 decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
 
-    opcode  := (machine.data.* >> 1) & 0b0111_1111;
+    machine_at_start := machine.*;
+
+    opcode  := (machine.data.* >> 2) & 0b011_1111;
+    s       := (machine.data.* >> 1) & 0b1;
     w       := (machine.data.* >> 0) & 0b1;
 
     machine.count -= 1;
@@ -221,25 +260,39 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
     // register mode
     if mod == 0b11 {
         data : int;
-        if !w {
+        if w && s {
             data = cast(*s8, machine.data).*;
             machine.count -= 1;
             machine.data += 1;
         }
-        else {
+        else if w {
             data = cast(*s16, machine.data).*;
             machine.count -= 2;
             machine.data += 2;
         }
+        else {
+            data = cast(*u8, machine.data).*;
+            machine.count -= 1;
+            machine.data += 1;
+        }
 
-        the_reg := to_register(rm, w);
+        the_reg := enum_to_string_lowercase(to_register(rm, w));
         the_immediate := tprint("%", data);
 
+        debug_string := tprint(
+            "style 2: imm to rm. s: %.w: %. [% %]",
+            s,
+            w,
+            formatInt(machine_at_start[0], minimum_digits=2, base=16),
+            formatInt(machine_at_start[1], minimum_digits=2, base=16),
+        );
+
         return tprint(
-            "% %, %",
+            "% %, % ; %",
             prefix,
             the_reg,
-            the_immediate
+            the_immediate,
+            debug_string
         );
     }
 
@@ -250,21 +303,26 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
         machine.data += 2;
 
         data : int;
-        if !w {
+        if w && s {
             data = cast(*s8, machine.data).*;
             machine.count -= 1;
             machine.data += 1;
         }
-        else {
+        else if w {
             data = cast(*s16, machine.data).*;
             machine.count -= 2;
             machine.data += 2;
+        }
+        else {
+            data = cast(*u8, machine.data).*;
+            machine.count -= 1;
+            machine.data += 1;
         }
 
         the_mem := tprint("[%]", address);
         the_immediate := tprint("%", data);
 
-        return tprint("% %, %", prefix, the_mem, the_immediate);
+        return tprint("% %, % ; style 2: imm to rm, special case direct address", prefix, the_mem, the_immediate);
     }
     // memory mode
     else {
@@ -283,15 +341,20 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
         }
 
         data : int;
-        if !w {
+        if w && s {
             data = cast(*s8, machine.data).*;
             machine.count -= 1;
             machine.data += 1;
         }
-        else {
+        else if w {
             data = cast(*s16, machine.data).*;
             machine.count -= 2;
             machine.data += 2;
+        }
+        else {
+            data = cast(*u8, machine.data).*;
+            machine.count -= 1;
+            machine.data += 1;
         }
 
         the_immediate : string;
@@ -333,24 +396,31 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
         append(*builder, "]");
         the_mem := builder_to_string(*builder);
 
-        return tprint("% %, %", prefix, the_mem, the_immediate);
+        return tprint("% %, % ; style 2: imm to rm, with memory displacement", prefix, the_mem, the_immediate);
     }
 }
 
 // =============================================================================
 
-// MOV-specific pattern
-decode_memory_to_accumulator :: (machine: *[] u8) -> string {
-
-    opcode  := (machine.data.* >> 1) & 0b0111_1111;
+// Style (3)        [OPCODE W] [DISP]
+decode_pattern_imm_to_acc :: (machine: *[] u8, prefix: string) -> string {
+    opcode  := (machine.data.* >> 1) & 0b111_1111;
     w       := (machine.data.* >> 0) & 0b1;
-    machine.data += 1;
-    machine.count -= 1;
 
-    addr    := cast(*u16, machine.data).*;
-    machine.data += 2;
-    machine.count -= 2;
-    the_mem := tprint("[%]", addr);
+    machine.count -= 1;
+    machine.data += 1;
+
+    data : int;
+    if !w {
+        data = cast(*s8, machine.data).*;
+        machine.count -= 1;
+        machine.data += 1;
+    }
+    else {
+        data = cast(*s16, machine.data).*;
+        machine.count -= 2;
+        machine.data += 2;
+    }
 
     the_reg: string;
     if w {
@@ -358,43 +428,16 @@ decode_memory_to_accumulator :: (machine: *[] u8) -> string {
     } else {
         the_reg = "al";
     }
+    the_immediate := tprint("%", data);
 
-    return tprint(
-        "mov %, %",
-        the_reg,
-        the_mem,
-    );
+    return tprint("% %, %", prefix, the_reg, the_immediate);
 }
 
-// MOV-specific pattern
-decode_accumulator_to_memory :: (machine: *[] u8) -> string {
 
-    opcode  := (machine.data.* >> 1) & 0b0111_1111;
-    w       := (machine.data.* >> 0) & 0b1;
-    machine.data += 1;
-    machine.count -= 1;
-
-    addr    := cast(*u16, machine.data).*;
-    machine.data += 2;
-    machine.count -= 2;
-    the_mem := tprint("[%]", addr);
-
-    the_reg: string;
-    if w {
-        the_reg = "ax";
-    } else {
-        the_reg = "al";
-    }
-
-    return tprint(
-        "mov %, %",
-        the_mem,
-        the_reg,
-    );
-}
+// =============================================================================
 
 // MOV-specific pattern
-decode_immediate_to_register :: (machine: *[] u8) -> string {
+decode_mov_immediate_to_register :: (machine: *[] u8) -> string {
     opcode  := (machine.data.* >> 4) & 0b1111;
     w       := (machine.data.* >> 3) & 0b1;
     reg     := (machine.data.* >> 0) & 0b111;
@@ -418,6 +461,60 @@ decode_immediate_to_register :: (machine: *[] u8) -> string {
     the_immediate := tprint("%", data);
 
     return tprint("mov %, %", the_reg, the_immediate);
+}
+
+// MOV-specific pattern
+decode_mov_memory_to_accumulator :: (machine: *[] u8) -> string {
+
+    opcode  := (machine.data.* >> 1) & 0b0111_1111;
+    w       := (machine.data.* >> 0) & 0b1;
+    machine.data += 1;
+    machine.count -= 1;
+
+    addr    := cast(*u16, machine.data).*;
+    machine.data += 2;
+    machine.count -= 2;
+    the_mem := tprint("[%]", addr);
+
+    the_reg: string;
+    if w {
+        the_reg = "ax";
+    } else {
+        the_reg = "al";
+    }
+
+    return tprint(
+        "mov %, %",
+        the_reg,
+        the_mem,
+    );
+}
+
+// MOV-specific pattern
+decode_mov_accumulator_to_memory :: (machine: *[] u8) -> string {
+
+    opcode  := (machine.data.* >> 1) & 0b0111_1111;
+    w       := (machine.data.* >> 0) & 0b1;
+    machine.data += 1;
+    machine.count -= 1;
+
+    addr    := cast(*u16, machine.data).*;
+    machine.data += 2;
+    machine.count -= 2;
+    the_mem := tprint("[%]", addr);
+
+    the_reg: string;
+    if w {
+        the_reg = "ax";
+    } else {
+        the_reg = "al";
+    }
+
+    return tprint(
+        "mov %, %",
+        the_mem,
+        the_reg,
+    );
 }
 
 // =============================================================================
