@@ -26,11 +26,8 @@ main :: () {
     // Do not produce executable
     set_build_options_dc(.{do_output = false});
 
-    original := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz.asm");
-    print("--- Original ---\n%\n\n\n", original);
-
     bin0 := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz");
-    print("--- Decoded ---\n%", run(bin0));
+    print(run(bin0));
 
 }
 
@@ -93,6 +90,29 @@ run :: (input: string) -> string {
         else if (machine.data.* >> 1) & 0b1111111 == 0b0011110 {
             result = decode_pattern_imm_to_acc(*machine, "cmp");
         }
+
+        // jump instructions
+
+        else if machine.data.* == 0b01110100 {result = decode_pattern_jump(*machine, "je");}
+        else if machine.data.* == 0b01111100 {result = decode_pattern_jump(*machine, "jl");}
+        else if machine.data.* == 0b01111110 {result = decode_pattern_jump(*machine, "jle");}
+        else if machine.data.* == 0b01110010 {result = decode_pattern_jump(*machine, "jb");}
+        else if machine.data.* == 0b01110110 {result = decode_pattern_jump(*machine, "jbe");}
+        else if machine.data.* == 0b01111010 {result = decode_pattern_jump(*machine, "jp");}
+        else if machine.data.* == 0b01110000 {result = decode_pattern_jump(*machine, "jo");}
+        else if machine.data.* == 0b01111000 {result = decode_pattern_jump(*machine, "js");}
+        else if machine.data.* == 0b01110101 {result = decode_pattern_jump(*machine, "jne");}
+        else if machine.data.* == 0b01111101 {result = decode_pattern_jump(*machine, "jnl");}
+        else if machine.data.* == 0b01111111 {result = decode_pattern_jump(*machine, "jnle");}
+        else if machine.data.* == 0b01110011 {result = decode_pattern_jump(*machine, "jnb");}
+        else if machine.data.* == 0b01110111 {result = decode_pattern_jump(*machine, "jnbe");}
+        else if machine.data.* == 0b01111011 {result = decode_pattern_jump(*machine, "jnp");}
+        else if machine.data.* == 0b01110001 {result = decode_pattern_jump(*machine, "jno");}
+        else if machine.data.* == 0b01111001 {result = decode_pattern_jump(*machine, "jns");}
+        else if machine.data.* == 0b11100010 {result = decode_pattern_jump(*machine, "loop");}
+        else if machine.data.* == 0b11100001 {result = decode_pattern_jump(*machine, "loopz");}
+        else if machine.data.* == 0b11100000 {result = decode_pattern_jump(*machine, "loopnz");}
+        else if machine.data.* == 0b11100011 {result = decode_pattern_jump(*machine, "jcxz");}
         
 
         // Unrecognized
@@ -112,6 +132,19 @@ unimplemented :: (machine: *[] u8) -> string {
     machine.count -= 1;
     machine.data += 1;
     return "unimplemented";
+}
+
+decode_pattern_jump :: (machine: *[] u8, prefix: string) -> string {
+
+    opcode := machine.data.*;
+    machine.count -= 1;
+    machine.data += 1;
+    displacement := cast(*s8, machine.data).*;
+    machine.count -= 1;
+    machine.data += 1;
+
+    return tprint("% %", prefix, displacement);
+
 }
 
 // =============================================================================
@@ -291,8 +324,7 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
             "% %, %",
             prefix,
             the_reg,
-            the_immediate,
-            debug_string
+            the_immediate
         );
     }
 
