@@ -33,5 +33,8 @@ set it up.
 You will find the following folders in this directory:
 
 - [001-mov-rr-decoder](001-mov-rr-decoder) - Decodes 8086 register-to-register
-MOV machine code
+MOV instructions
+- [002-more-mov](002-more-mov) - Decodes a variety of 8086 MOV instructions
+- [003-decoder](003-decoder) - Decodes a variety of 8086 instructions,
+including MOV, ADD, SUB, CMP, and a variety of conditional jumps
 
