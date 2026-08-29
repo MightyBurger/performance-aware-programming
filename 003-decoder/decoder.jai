@@ -146,7 +146,7 @@ decode_pattern_rm_to_rm :: (machine: *[] u8, prefix: string) -> string {
         }
 
         return tprint(
-            "% %, % ; style 1",
+            "% %, %",
             prefix,
             enum_to_string_lowercase(dst),
             enum_to_string_lowercase(src)
@@ -231,7 +231,7 @@ decode_pattern_rm_to_rm :: (machine: *[] u8, prefix: string) -> string {
             src = the_reg;
         };
 
-        return tprint("% %, % ; style 1", prefix, dst, src);
+        return tprint("% %, %", prefix, dst, src);
     }
 }
 
@@ -288,7 +288,7 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
         );
 
         return tprint(
-            "% %, % ; %",
+            "% %, %",
             prefix,
             the_reg,
             the_immediate,
@@ -322,7 +322,7 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
         the_mem := tprint("[%]", address);
         the_immediate := tprint("%", data);
 
-        return tprint("% %, % ; style 2: imm to rm, special case direct address", prefix, the_mem, the_immediate);
+        return tprint("% %, %", prefix, the_mem, the_immediate);
     }
     // memory mode
     else {
@@ -357,13 +357,10 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
             machine.data += 1;
         }
 
-        the_immediate : string;
-        if !w {
-            the_immediate = tprint("byte %", data);
-        } else {
-            the_immediate = tprint("word %", data);
-        }
+        the_immediate := tprint("%", data);
 
+        the_modifier : string;
+        if w {the_modifier = "word";} else {the_modifier = "byte";}
 
         builder: String_Builder;
         init_string_builder(*builder);
@@ -396,7 +393,7 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
         append(*builder, "]");
         the_mem := builder_to_string(*builder);
 
-        return tprint("% %, % ; style 2: imm to rm, with memory displacement", prefix, the_mem, the_immediate);
+        return tprint("% % %, %", prefix, the_modifier, the_mem, the_immediate);
     }
 }
 
