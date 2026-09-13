@@ -23,6 +23,32 @@ Computer :: struct {
     registers: [8] u16; //ax, bx, cx, dx, sp, bp, si, di
 }
 
+get_reg :: (computer: *Computer, register: Register) -> *u16 {
+    if register == {
+        // case .AL; *computer.registers[0],
+        // case .BL; *computer.registers[0],
+        // case .CL; *computer.registers[0],
+        // case .DL; *computer.registers[0],
+        // case .AH; *computer.registers[0],
+        // case .CH; *computer.registers[0],
+        // case .DH; *computer.registers[0],
+        // case .BH; *computer.registers[0],
+
+        case .AX; return *computer.registers[0];
+        case .BX; return *computer.registers[1];
+        case .CX; return *computer.registers[2];
+        case .DX; return *computer.registers[3];
+        case .SP; return *computer.registers[4];
+        case .BP; return *computer.registers[5];
+        case .SI; return *computer.registers[6];
+        case .DI; return *computer.registers[7];
+        case; {
+            print("ERROR: Unsupported register\n");
+            exit(-1);
+        }
+    }
+}
+
 // Run as script
 #run main();
 
@@ -33,11 +59,18 @@ main :: () {
     bin0 := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0043_immediate_movs");
 
     computer: Computer;
-    run(.{count=bin0.count, data=bin0.data});
-
+    run(.{count=bin0.count, data=bin0.data}, *computer);
+    print("AX %\n", formatInt(computer.registers[0], base = 16, minimum_digits = 4));
+    print("BX %\n", formatInt(computer.registers[1], base = 16, minimum_digits = 4));
+    print("CX %\n", formatInt(computer.registers[2], base = 16, minimum_digits = 4));
+    print("DX %\n", formatInt(computer.registers[3], base = 16, minimum_digits = 4));
+    print("SP %\n", formatInt(computer.registers[4], base = 16, minimum_digits = 4));
+    print("BP %\n", formatInt(computer.registers[5], base = 16, minimum_digits = 4));
+    print("SI %\n", formatInt(computer.registers[6], base = 16, minimum_digits = 4));
+    print("DI %\n", formatInt(computer.registers[7], base = 16, minimum_digits = 4));
 }
 
-run :: (machine: [] u8) {
+run :: (machine: [] u8, computer: *Computer) {
 
     builder: String_Builder;
     init_string_builder(*builder);
@@ -47,10 +80,14 @@ run :: (machine: [] u8) {
     while machine.count > 0 {
         result: string;
 
+        mov_fn :: (dest: *u16, src: *u16) {
+            dest.* = src.*;
+        }
+
         // MOV instructions
         if      (machine.data.* >> 2) & 0b1111_11 == 0b100010   { result = decode_pattern_rm_to_rm(*machine, "mov"); }
-        else if (machine.data.* >> 1) & 0b1111111 == 0b1100011  { result = decode_pattern_imm_to_rm(*machine, "mov"); }
-        else if (machine.data.* >> 4) & 0b1111    == 0b1011     { result = decode_mov_immediate_to_register(*machine); }
+        else if (machine.data.* >> 1) & 0b1111111 == 0b1100011  { result = decode_pattern_imm_to_rm(*machine, computer, "mov", mov_fn); }
+        else if (machine.data.* >> 4) & 0b1111    == 0b1011     { result = decode_mov_immediate_to_register(*machine, computer); }
         else if (machine.data.* >> 1) & 0b1111111 == 0b1010000  { result = decode_mov_memory_to_accumulator(*machine); }
         else if (machine.data.* >> 1) & 0b1111111 == 0b1010001  { result = decode_mov_accumulator_to_memory(*machine); }
 
@@ -61,9 +98,9 @@ run :: (machine: [] u8) {
         else if (machine.data.* >> 2) & 0b111111 == 0b100000 {
             subop := (machine.data[1] >> 3) & 0b111;
             if subop == {
-                case 0b000; result = decode_pattern_imm_to_rm(*machine, "add");
-                case 0b101; result = decode_pattern_imm_to_rm(*machine, "sub");
-                case 0b111; result = decode_pattern_imm_to_rm(*machine, "cmp");
+                // case 0b000; result = decode_pattern_imm_to_rm(*machine, computer, "add");
+                // case 0b101; result = decode_pattern_imm_to_rm(*machine, computer, "sub");
+                // case 0b111; result = decode_pattern_imm_to_rm(*machine, computer, "cmp");
                 case;       result = unimplemented(*machine);
             }
         }
@@ -253,7 +290,7 @@ decode_pattern_rm_to_rm :: (machine: *[] u8, prefix: string) -> string {
 
 // Style (2)    [OPCODE SW] [MOD xyz R/m] [IMM]
 // Note, you will need to peek ahead of time to obtain the prefix.
-decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
+decode_pattern_imm_to_rm :: (machine: *[] u8, computer: *Computer, prefix: string, op: (dest: *u16, src: *u16)) -> string {
 
     machine_at_start := machine.*;
 
@@ -290,16 +327,14 @@ decode_pattern_imm_to_rm :: (machine: *[] u8, prefix: string) -> string {
             machine.data += 1;
         }
 
-        the_reg := enum_to_string_lowercase(to_register(rm, w));
-        the_immediate := tprint("%", data);
+        // Apply the operation to the appropriate data
+        // TODO only handling u16s now!
+        register := to_register(rm, w);
+        dest := get_reg(computer, register);
+        op(dest, cast(*u16) *data);
 
-        debug_string := tprint(
-            "style 2: imm to rm. s: %.w: %. [% %]",
-            s,
-            w,
-            formatInt(machine_at_start[0], minimum_digits=2, base=16),
-            formatInt(machine_at_start[1], minimum_digits=2, base=16),
-        );
+        the_reg := enum_to_string_lowercase(register);
+        the_immediate := tprint("%", data);
 
         return tprint(
             "% %, %",
@@ -447,7 +482,7 @@ decode_pattern_imm_to_acc :: (machine: *[] u8, prefix: string) -> string {
 // =============================================================================
 
 // MOV-specific pattern
-decode_mov_immediate_to_register :: (machine: *[] u8) -> string {
+decode_mov_immediate_to_register :: (machine: *[] u8, computer: *Computer) -> string {
     opcode  := (machine.data.* >> 4) & 0b1111;
     w       := (machine.data.* >> 3) & 0b1;
     reg     := (machine.data.* >> 0) & 0b111;
@@ -467,7 +502,11 @@ decode_mov_immediate_to_register :: (machine: *[] u8) -> string {
         machine.data += 2;
     }
 
-    the_reg := enum_to_string_lowercase(to_register(reg, w));
+    reg_enum := to_register(reg, w);
+    reg_p := get_reg(computer, reg_enum);
+    reg_p.* = cast(u16) data; // TODO only handling 16-bit for now
+
+    the_reg := enum_to_string_lowercase(reg_enum);
     the_immediate := tprint("%", data);
 
     return tprint("mov %, %", the_reg, the_immediate);

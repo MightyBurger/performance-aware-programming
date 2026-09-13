@@ -1,0 +1,5 @@
+{
+  "build_root": "004-sim-non-mem-moves/decoder.jai",
+  "roots": ["004-sim-non-mem-moves/decoder.jai"],
+  "use_symbols_from_local_modules": true
+}
