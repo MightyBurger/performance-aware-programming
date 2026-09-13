@@ -1,7 +1,7 @@
 // Copyright 2026 Jordan Johnson
 
 // Reference around page 4-22 of Intel 8086 Family User's Manual
- 
+
 #import "Compiler";
 #import "Basic";
 #import "File";
@@ -462,4 +462,3 @@ enum_to_string_lowercase :: (value: $T) -> string {
     };
     return "(invalid)";
 }
-
