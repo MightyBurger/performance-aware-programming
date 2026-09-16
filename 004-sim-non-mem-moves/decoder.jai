@@ -1,5 +1,11 @@
 // Copyright 2026 Jordan Johnson
 // Reference around page 4-22 of Intel 8086 Family User's Manual
+//
+// A warning to readers:
+// This is really quite nasty code.
+// The purpose of this code is just to build the intuition Casey's course is
+// trying to teach, and to dip my toes into the Jai language, so I did not
+// bother trying to make it maintainable at all.
 
 /*
     A few styles:
@@ -42,11 +48,10 @@ get_reg :: (computer: *Computer, register: Register) -> *u16 {
         case .BP; return *computer.registers[5];
         case .SI; return *computer.registers[6];
         case .DI; return *computer.registers[7];
-        case; {
-            print("ERROR: Unsupported register\n");
-            exit(-1);
-        }
     }
+    print("ERROR: Unsupported register\n");
+    exit(-1);
+    return null;
 }
 
 // Run as script
@@ -56,18 +61,32 @@ main :: () {
     // Do not produce executable
     set_build_options_dc(.{do_output = false});
 
-    bin0 := read_entire_file("../submodules/computer_enhance/perfaware/part1/listing_0043_immediate_movs");
+    // args := get_command_line_arguments(); // Oops, this is for runtime command line args. Leaving for future reference!
+    args := get_build_options().compile_time_command_line;
+    if args.count != 1 {
+        print("Pass exactly one argument, the path to the 8086 binary to execute.");
+        exit(-1);
+    }
+    file : string = args[0];
+
+    bin0, success := read_entire_file(file);
+    if !success {
+        // read_entire_file logs for us, no need to print an error.
+        exit(-1);
+    }
+    print("Simulating %\n", file);
 
     computer: Computer;
     run(.{count=bin0.count, data=bin0.data}, *computer);
-    print("AX %\n", formatInt(computer.registers[0], base = 16, minimum_digits = 4));
-    print("BX %\n", formatInt(computer.registers[1], base = 16, minimum_digits = 4));
-    print("CX %\n", formatInt(computer.registers[2], base = 16, minimum_digits = 4));
-    print("DX %\n", formatInt(computer.registers[3], base = 16, minimum_digits = 4));
-    print("SP %\n", formatInt(computer.registers[4], base = 16, minimum_digits = 4));
-    print("BP %\n", formatInt(computer.registers[5], base = 16, minimum_digits = 4));
-    print("SI %\n", formatInt(computer.registers[6], base = 16, minimum_digits = 4));
-    print("DI %\n", formatInt(computer.registers[7], base = 16, minimum_digits = 4));
+    print("\nFinal registers:\n");
+    print("    ax: 0x% (%)\n", formatInt(computer.registers[0], base = 16, minimum_digits = 4), computer.registers[0]);
+    print("    bx: 0x% (%)\n", formatInt(computer.registers[1], base = 16, minimum_digits = 4), computer.registers[1]);
+    print("    cx: 0x% (%)\n", formatInt(computer.registers[2], base = 16, minimum_digits = 4), computer.registers[2]);
+    print("    dx: 0x% (%)\n", formatInt(computer.registers[3], base = 16, minimum_digits = 4), computer.registers[3]);
+    print("    sp: 0x% (%)\n", formatInt(computer.registers[4], base = 16, minimum_digits = 4), computer.registers[4]);
+    print("    bp: 0x% (%)\n", formatInt(computer.registers[5], base = 16, minimum_digits = 4), computer.registers[5]);
+    print("    si: 0x% (%)\n", formatInt(computer.registers[6], base = 16, minimum_digits = 4), computer.registers[6]);
+    print("    di: 0x% (%)\n", formatInt(computer.registers[7], base = 16, minimum_digits = 4), computer.registers[7]);
 }
 
 run :: (machine: [] u8, computer: *Computer) {
@@ -80,21 +99,22 @@ run :: (machine: [] u8, computer: *Computer) {
     while machine.count > 0 {
         result: string;
 
+        noop_fn :: (dest: *u16, src: *u16) {}
         mov_fn :: (dest: *u16, src: *u16) {
             dest.* = src.*;
         }
 
         // MOV instructions
-        if      (machine.data.* >> 2) & 0b1111_11 == 0b100010   { result = decode_pattern_rm_to_rm(*machine, "mov"); }
+        if      (machine.data.* >> 2) & 0b1111_11 == 0b100010   { result = decode_pattern_rm_to_rm(*machine, computer, "mov", mov_fn); }
         else if (machine.data.* >> 1) & 0b1111111 == 0b1100011  { result = decode_pattern_imm_to_rm(*machine, computer, "mov", mov_fn); }
         else if (machine.data.* >> 4) & 0b1111    == 0b1011     { result = decode_mov_immediate_to_register(*machine, computer); }
         else if (machine.data.* >> 1) & 0b1111111 == 0b1010000  { result = decode_mov_memory_to_accumulator(*machine); }
         else if (machine.data.* >> 1) & 0b1111111 == 0b1010001  { result = decode_mov_accumulator_to_memory(*machine); }
 
         // Arithmetic instructions
-        else if (machine.data.* >> 2) & 0b111111 == 0b000000 { result = decode_pattern_rm_to_rm(*machine, "add"); }
-        else if (machine.data.* >> 2) & 0b111111 == 0b001010 { result = decode_pattern_rm_to_rm(*machine, "sub"); }
-        else if (machine.data.* >> 2) & 0b111111 == 0b001110 { result = decode_pattern_rm_to_rm(*machine, "cmp"); }
+        else if (machine.data.* >> 2) & 0b111111 == 0b000000 { result = decode_pattern_rm_to_rm(*machine, computer, "add", noop_fn); }
+        else if (machine.data.* >> 2) & 0b111111 == 0b001010 { result = decode_pattern_rm_to_rm(*machine, computer, "sub", noop_fn); }
+        else if (machine.data.* >> 2) & 0b111111 == 0b001110 { result = decode_pattern_rm_to_rm(*machine, computer, "cmp", noop_fn); }
         else if (machine.data.* >> 2) & 0b111111 == 0b100000 {
             subop := (machine.data[1] >> 3) & 0b111;
             if subop == {
@@ -168,7 +188,7 @@ decode_pattern_jump :: (machine: *[] u8, prefix: string) -> string {
 // =============================================================================
 
 // Style (1)        [OPCODE DW] [MOD REG R/M] DISP
-decode_pattern_rm_to_rm :: (machine: *[] u8, prefix: string) -> string {
+decode_pattern_rm_to_rm :: (machine: *[] u8, computer: *Computer, prefix: string, op: (dest: *u16, src: *u16)) -> string {
 
     opcode  := (machine.data.* >> 2) & 0b111111;
     d       := (machine.data.* >> 1) & 0b1;
@@ -195,6 +215,10 @@ decode_pattern_rm_to_rm :: (machine: *[] u8, prefix: string) -> string {
             dst = to_register(rm, w);
             src = to_register(reg, w);
         }
+
+        op_dst := get_reg(computer, dst);
+        op_src := get_reg(computer, src);
+        op(op_dst, op_src);
 
         return tprint(
             "% %, %",
