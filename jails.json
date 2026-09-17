@@ -1,4 +1,4 @@
 {
-  "build_root": "004-sim-non-mem-moves/decoder.jai",
-  "roots": ["004-sim-non-mem-moves/decoder.jai"]
+  "build_root": "005-sim-add-sub-cmp",
+  "roots": ["005-sim-add-sub-cmp"]
 }
