@@ -165,6 +165,16 @@ run :: (computer: *Computer) {
             flags.* = get_flags(dest.*);
         }
 
+        // jump instructions
+        always_jump_fn :: (flags: Flags) -> bool {
+            return true;
+        }
+        jne_fn :: (flags: Flags) -> bool {
+            if flags.zero return false;
+            return true;
+        }
+
+
         // MOV instructions
         if      (peek(computer) >> 2) & 0b1111_11 == 0b100010   { result = decode_pattern_rm_to_rm(computer, "mov", mov_fn); }
         else if (peek(computer) >> 1) & 0b1111111 == 0b1100011  { result = decode_pattern_imm_to_rm(computer, "mov", mov_fn); }
@@ -189,27 +199,26 @@ run :: (computer: *Computer) {
         else if (peek(computer) >> 1) & 0b1111111 == 0b0010110 { result = decode_pattern_imm_to_acc(computer, "sub", sub_fn); }
         else if (peek(computer) >> 1) & 0b1111111 == 0b0011110 { result = decode_pattern_imm_to_acc(computer, "cmp", cmp_fn); }
 
-        // jump instructions
-        else if peek(computer) == 0b01110100 {result = decode_pattern_jump(computer, "je");}
-        else if peek(computer) == 0b01111100 {result = decode_pattern_jump(computer, "jl");}
-        else if peek(computer) == 0b01111110 {result = decode_pattern_jump(computer, "jle");}
-        else if peek(computer) == 0b01110010 {result = decode_pattern_jump(computer, "jb");}
-        else if peek(computer) == 0b01110110 {result = decode_pattern_jump(computer, "jbe");}
-        else if peek(computer) == 0b01111010 {result = decode_pattern_jump(computer, "jp");}
-        else if peek(computer) == 0b01110000 {result = decode_pattern_jump(computer, "jo");}
-        else if peek(computer) == 0b01111000 {result = decode_pattern_jump(computer, "js");}
-        else if peek(computer) == 0b01110101 {result = decode_pattern_jump(computer, "jne");}
-        else if peek(computer) == 0b01111101 {result = decode_pattern_jump(computer, "jnl");}
-        else if peek(computer) == 0b01111111 {result = decode_pattern_jump(computer, "jnle");}
-        else if peek(computer) == 0b01110011 {result = decode_pattern_jump(computer, "jnb");}
-        else if peek(computer) == 0b01110111 {result = decode_pattern_jump(computer, "jnbe");}
-        else if peek(computer) == 0b01111011 {result = decode_pattern_jump(computer, "jnp");}
-        else if peek(computer) == 0b01110001 {result = decode_pattern_jump(computer, "jno");}
-        else if peek(computer) == 0b01111001 {result = decode_pattern_jump(computer, "jns");}
-        else if peek(computer) == 0b11100010 {result = decode_pattern_jump(computer, "loop");}
-        else if peek(computer) == 0b11100001 {result = decode_pattern_jump(computer, "loopz");}
-        else if peek(computer) == 0b11100000 {result = decode_pattern_jump(computer, "loopnz");}
-        else if peek(computer) == 0b11100011 {result = decode_pattern_jump(computer, "jcxz");}
+        else if peek(computer) == 0b01110100 {result = decode_pattern_jump(computer, "je",      always_jump_fn);}
+        else if peek(computer) == 0b01111100 {result = decode_pattern_jump(computer, "jl",      always_jump_fn);}
+        else if peek(computer) == 0b01111110 {result = decode_pattern_jump(computer, "jle",     always_jump_fn);}
+        else if peek(computer) == 0b01110010 {result = decode_pattern_jump(computer, "jb",      always_jump_fn);}
+        else if peek(computer) == 0b01110110 {result = decode_pattern_jump(computer, "jbe",     always_jump_fn);}
+        else if peek(computer) == 0b01111010 {result = decode_pattern_jump(computer, "jp",      always_jump_fn);}
+        else if peek(computer) == 0b01110000 {result = decode_pattern_jump(computer, "jo",      always_jump_fn);}
+        else if peek(computer) == 0b01111000 {result = decode_pattern_jump(computer, "js",      always_jump_fn);}
+        else if peek(computer) == 0b01110101 {result = decode_pattern_jump(computer, "jne",     jne_fn);}
+        else if peek(computer) == 0b01111101 {result = decode_pattern_jump(computer, "jnl",     always_jump_fn);}
+        else if peek(computer) == 0b01111111 {result = decode_pattern_jump(computer, "jnle",    always_jump_fn);}
+        else if peek(computer) == 0b01110011 {result = decode_pattern_jump(computer, "jnb",     always_jump_fn);}
+        else if peek(computer) == 0b01110111 {result = decode_pattern_jump(computer, "jnbe",    always_jump_fn);}
+        else if peek(computer) == 0b01111011 {result = decode_pattern_jump(computer, "jnp",     always_jump_fn);}
+        else if peek(computer) == 0b01110001 {result = decode_pattern_jump(computer, "jno",     always_jump_fn);}
+        else if peek(computer) == 0b01111001 {result = decode_pattern_jump(computer, "jns",     always_jump_fn);}
+        else if peek(computer) == 0b11100010 {result = decode_pattern_jump(computer, "loop",    always_jump_fn);}
+        else if peek(computer) == 0b11100001 {result = decode_pattern_jump(computer, "loopz",   always_jump_fn);}
+        else if peek(computer) == 0b11100000 {result = decode_pattern_jump(computer, "loopnz",  always_jump_fn);}
+        else if peek(computer) == 0b11100011 {result = decode_pattern_jump(computer, "jcxz",    always_jump_fn);}
 
 
         // Unrecognized
@@ -232,9 +241,16 @@ unimplemented :: (computer: *Computer) -> string {
     return "unimplemented";
 }
 
-decode_pattern_jump :: (computer: *Computer, prefix: string) -> string {
+decode_pattern_jump :: (computer: *Computer, prefix: string, predicate: (flags: Flags) -> bool) -> string {
     opcode := eat(computer);
     displacement := eat_s8(computer);
+
+    if predicate(computer.flags) {
+        // Again leaving here for reference
+        // computer.ip = cast,no_check(u16) (cast,no_check(s16) computer.ip + displacement);
+        computer.ip = xx (xx computer.ip + displacement);
+    }
+
     return tprint("% %", prefix, displacement);
 }
 
