@@ -1,4 +1,4 @@
 {
-  "build_root": "005-sim-add-sub-cmp",
-  "roots": ["005-sim-add-sub-cmp"]
+  "build_root": "006-sim-conditional-jumps/main.jai",
+  "roots": ["006-sim-conditional-jumps/main.jai"]
 }

@@ -37,4 +37,9 @@ MOV instructions
 - [002-more-mov](002-more-mov) - Decodes a variety of 8086 MOV instructions
 - [003-decoder](003-decoder) - Decodes a variety of 8086 instructions,
 including MOV, ADD, SUB, CMP, and a variety of conditional jumps
-
+- [004-sim-non-mem-movees](004-sim-non-mem-movees) - Simulates 8086 MOV
+instructions
+- [005-sim-add-sub-cmp](005-sim-add-sub-cmp) - Simulates simple 8086 
+arithmetic instructions
+- [006-sim-conditional-jumps](006-sim-conditional-jumps) - Simulates simple 8086 
+conditional jump instructions
